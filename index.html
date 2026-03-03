@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Backward-Mode Automatic Differentiation</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<script>
+  window.MathJax = {
+    tex: {
+      inlineMath: [['\\(', '\\)']],
+      displayMath: [['\\[', '\\]']]
+    },
+    options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'] }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+<body>
+  <header>
+      <h1>Reverse-mode Automatic Differentiation</h1>
+    <p>
+      Pick a function, drag the sliders to set starting point, then run <b>Forward</b> to compute values (v) on the computational graph.<br>
+      Click <b>Backprop step</b> to propagate gradients (g) one node at a time, in reverse order. Click <b>Backprop all</b> to run backpropagation to completion.<br>
+      The gradients <code>dy/dx</code> and <code>dy/dz</code> are the same as what you’d get from calculus, but computed by chaining local derivatives along the graph.<br>
+      <a href="autograd_details.html">Click here for more details on the math</a>.
+    </p>
+  </header>
+
+  <div class="wrap">
+    <section class="card">
+      <div class="controlBox" style="margin-top:10px;">
+        <h2>Forward pass</h2>
+        <div class="row">
+          <label for="fnSelect">Function</label>
+          <div class="val"></div>
+        </div>
+        <select id="fnSelect">
+          <option value="0">y = x² + z²</option>
+          <option value="1">y = 0.2ReLU(xz) + sin(x+z)</option>
+          <option value="2">y = (x − z)² + cos(x+z)</option>
+          <option value="3">y = sin(xz) + 0.15(x² + z²)</option>
+          <option value="4">y = 0.20(x²+z²) + sin(x+z)</option>
+        </select>
+
+        <div class="row">
+          <label for="xRange">x</label>
+          <div class="val" id="xVal">0.0</div>
+        </div>
+        <input id="xRange" type="range" min="-3" max="3" step="0.01" value="0.7" />
+
+        <div class="row">
+          <label for="zRange">z</label>
+          <div class="val" id="zVal">0.0</div>
+        </div>
+        <input id="zRange" type="range" min="-3" max="3" step="0.01" value="-0.9" />
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+          <button id="btnForward" class="primary">Forward</button>
+          <div class="pill">
+            <div class="k">y value</div>
+            <div class="v" id="outY">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controlBox" style="margin-top:12px;">
+        <h2>Backward pass</h2>
+        <p class="small" style="margin-top:10px;">
+          Tips:
+          <br>• After <b>Forward</b>, the output node <code>y</code> gets a seed gradient <code>dy/dy = 1</code>.
+          <br>• Each <b>Backprop step</b> picks one node and pushes its accumulated gradient to its parents.
+          Try to follow the calculations at each step.
+        </p>
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-top:10px;">
+          <button id="btnStep" disabled>Backprop step</button>
+          <button id="btnRunAll" disabled>Backprop all</button>
+          <div class="pill">
+            <div class="k">Backprop progress</div>
+            <div class="v" id="progress">—</div>
+          </div>
+        </div>
+
+        <div class="pill" style="margin-top:10px;">
+          <div class="k">Backpropagation calculations</div>
+          <div class="v small" id="chainRuleInfo" style="margin-top:6px;">Run <b>Forward</b>, then <b>Backprop step</b>.</div>
+        </div>
+
+        <div class="stats" style="margin-top:10px;">
+          <div class="pill">
+            <div class="k">dy/dx</div>
+            <div class="v" id="gradX">—</div>
+          </div>
+          <div class="pill">
+            <div class="k">dy/dz</div>
+            <div class="v" id="gradZ">—</div>
+          </div>
+        </div>
+
+        <div class="btnRow" style="grid-template-columns: 1fr 1fr; margin-top:10px;">
+          <button id="btnReset">Reset gradients</button>
+          <button id="btnFiniteDiff">Check finite-difference</button>
+        </div>
+      </div>
+
+      <div class="controlBox" style="margin-top:12px;">
+        <h2>Gradient descent</h2>
+        <p class="small" style="margin-top:10px;">
+          Tips:
+          <br>• After <b>Backprop</b> is complete, the gradients <code>dy/dx</code> and <code>dy/dz</code> tell us how to change <code>x</code> and <code>z</code> to increase <code>y</code>.
+          <br>• The direction of steepest descent is given by: <code>(x,z) ← (x,z) − α(dy/dx, dy/dz)</code>.
+          <br>• Choose a step size α (learning rate) and update <code>x</code> and <code>z</code> accordingly.
+        </p>
+        <div class="row" style="margin-top:12px;">
+          <label for="lrRange">Step size α</label>
+          <div class="val" id="lrVal">0.100</div>
+        </div>
+        <input id="lrRange" type="range" min="0.001" max="1" step="0.001" value="0.1" />
+        <div class="btnRow" style="grid-template-columns: 1fr 1fr; margin-top:10px;">
+          <button id="btnDescend">Descend gradient</button>
+          <button id="btnClearTrace">Clear trace</button>
+        </div>
+      </div>
+
+    </section>
+
+      <div class="vizCol">
+        <section class="card graphWrap">
+          <h2>Computational Graph</h2>
+          <div class="legend" style="margin-top:0; margin-bottom:6px;">
+            <span class="chip"><span class="dot fwd"></span>value (v) computed</span>
+            <span class="chip"><span class="dot rev"></span>gradient (g) flowed</span>
+            <span class="chip"><span class="dot seed"></span>seed (g = 1)</span>
+          </div>
+          <div class="graphScroll">
+            <svg id="graph" viewBox="-40 0 1280 540" role="img" aria-label="Computational graph for automatic differentiation"></svg>
+          </div>
+        </section>
+
+        <section class="card plotWrap">
+          <h2>3D Surface Plot</h2>
+          <div class="legend" style="margin-top:0; margin-bottom:6px;">
+            <span class="chip"><span class="dot forwardp"></span>forward eval</span>
+            <span class="chip"><span class="dot previewp"></span>slider preview</span>
+          </div>
+          <div id="plot3d"
+            style="width:100%; height:540px;">
+          </div>
+        </section>
+      </div>
+  </div>
+
+  <script src="autograd_script.js"></script>
+</body>
+</html>

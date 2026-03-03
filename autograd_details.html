@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Reverse-mode Automatic Differentiation: A Worked Example</title>
+  <link rel="stylesheet" href="autograd_details.css">
+  <script>
+    window.MathJax = {
+      loader: { load: ["input/tex", "output/svg"] },
+      tex: {
+        inlineMath: [["$", "$"], ["\\(", "\\)"]],
+        displayMath: [["$$", "$$"], ["\\[", "\\]"]]
+      },
+      options: { skipHtmlTags: ["script", "noscript", "style", "textarea", "pre"] },
+      startup: { typeset: true }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Reverse-mode Automatic Differentiation</h1>
+    <p>
+      Automatic differentiation (AD) is a general computational technique for evaluating 
+      exact derivatives of functions defined by computer programs.
+      Unlike symbolic differentiation, AD does not manipulate algebraic expressions, 
+      and unlike finite differences, it does not rely on numerical approximations.
+      Instead, it decomposes a computation into a sequence of elementary operations 
+      and systematically applies the chain rule to propagate derivatives through that sequence with machine precision.
+      Conceptually, AD can be viewed as an efficient, programmatic implementation of the chain rule of calculus.
+    </p>
+
+    <br>
+
+    <p>
+      AD is central to modern machine learning frameworks such as PyTorch (<code>autograd</code>),
+      TensorFlow (<code>gradient</code>) and JAX (<code>grad</code>). During the forward evaluation of a function,
+      these libraries construct a computational graph that records intermediate quantities and their dependencies.
+      In reverse-mode AD, this graph is then traversed in reverse to compute derivatives with respect to
+      potentially millions of parameters.
+    </p>
+
+    <br>
+
+    <h3>Reverse-mode AD vs. backpropagation</h3>
+    <p>
+      Reverse-mode AD is particularly powerful when computing the gradient of a 
+      scalar-valued function with respect to many inputs, i.e. $f:\mathbb{R}^n\to\mathbb{R}$.
+      This is precisely the situation encountered in neural network training
+      (e.g., when differentiating sum-of-squared-error or cross-entropy losses).
+      
+      <br><br>
+      
+      <em>Backpropagation</em> typically refers to the sepecific application of reverse-mode AD when the
+      computational graph has the layered structure of a neural network, though it can refer more
+      generally to any scalar valued function.
+      A key result is that the computational cost of evaluating the gradient is comparable (up to a small constant factor)
+      to a single evaluation of the original function. This efficiency is what makes large-scale deep learning feasible.
+      Note: forward mode AD is not considered here, but has its own use cases (e.g., when the function has many outputs and few inputs).
+    </p>
+
+    <br>
+    
+    <h3>Goal of this page</h3>
+    <p>
+      Oftentimes, AD is used as a black box without understanding the underlying mechanics.
+      It is worth understanding <em>once</em> (and <em>properly</em>) how automatic 
+      differentiation works before relying on it routinely.
+    </p>
+    <br>
+    <p>
+      The goal of this page is to walk through a minimal example.
+      We study example 3 from the acompanying <a href="index.html">demonstration</a>:
+      $$y = f(x,z) = (x-z)^2 + \cos(x+z).$$.
+    </p>
+  </header>
+
+  <div class="wrap" style="grid-template-columns: 1fr;">
+    <section class="card">
+      <h2>Write $f$ as sequence of elementary operations</h2>
+      <p class="small">
+        Any function implemented on a computer is ultimately evaluated as a sequence of simple, elementary operations.
+        To apply automatic differentiation, we must first express the function in this form.
+        For $y=(x-z)^2+\cos(x+z)$, we introduce intermediate variables:
+      </p>
+      <div class="pill"><div class="v small">\[
+        t_1=x-z,\quad t_2=t_1^2,\quad t_3=x+z,\quad t_4=\cos(t_3),\quad y=t_2+t_4
+      \]</div></div>
+      <p class="small">
+        Each assignment represents a single elementary operation (addition, subtraction, squaring, cosine).
+        The set of variables $(x,z,t_1,t_2,t_3,t_4,y)$ will be referred to as graph nodes. 
+        These nodes record every intermediate quantity computed during the forward evaluation of the function.
+    </section>
+    <section class="card">
+      <h2>Computational graph</h2>
+      <p class="small">
+        The diagram below visualises how the function is evaluated on a computer.
+      </p>
+      <div class="detailGraphWrap">
+        <svg class="detailGraph" viewBox="0 0 980 260" role="img" aria-label="Computational graph for y equals x minus z squared plus cosine of x plus z">
+          <defs>
+            <marker id="dArrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"></path>
+            </marker>
+          </defs>
+
+          <line class="dgEdge" x1="130" y1="54" x2="250" y2="118" />
+          <line class="dgEdge" x1="130" y1="204" x2="250" y2="140" />
+          <line class="dgEdge" x1="390" y1="129" x2="430" y2="82" />
+          <path class="dgEdge" d="M 130 54 Q 255 12 430 198" />
+          <line class="dgEdge" x1="130" y1="204" x2="430" y2="212" />
+          <line class="dgEdge" x1="570" y1="209" x2="620" y2="209" />
+          <line class="dgEdge" x1="570" y1="69" x2="800" y2="118" />
+          <line class="dgEdge" x1="760" y1="209" x2="800" y2="140" />
+
+          <g transform="translate(60,30)">
+            <rect class="dgNode" width="140" height="48" rx="10"></rect>
+            <text class="dgText" x="70" y="30">x</text>
+          </g>
+
+          <g transform="translate(60,180)">
+            <rect class="dgNode" width="140" height="48" rx="10"></rect>
+            <text class="dgText" x="70" y="30">z</text>
+          </g>
+
+          <g transform="translate(250,105)">
+            <rect class="dgNode" width="140" height="48" rx="10"></rect>
+            <text class="dgText" x="70" y="30">t₁ = x − z</text>
+          </g>
+
+          <g transform="translate(430,45)">
+            <rect class="dgNode" width="140" height="48" rx="10"></rect>
+            <text class="dgText" x="70" y="30">t₂ = t₁²</text>
+          </g>
+
+          <g transform="translate(430,185)">
+            <rect class="dgNode" width="140" height="48" rx="10"></rect>
+            <text class="dgText" x="70" y="30">t₃ = x + z</text>
+          </g>
+
+          <g transform="translate(620,185)">
+            <rect class="dgNode" width="140" height="48" rx="10"></rect>
+            <text class="dgText" x="70" y="30">t₄ = cos(t₃)</text>
+          </g>
+
+          <g transform="translate(800,105)">
+            <rect class="dgNode" width="140" height="48" rx="10"></rect>
+            <text class="dgText" x="70" y="30">y = t₂ + t₄</text>
+          </g>
+        </svg>
+      </div>
+      <p class="small">
+        Each node corresponds to one intermediate variable, and each edge represents a dependency.
+        The graph encodes the full structure of the computation.
+        We say that $y$ is the child of $t_2$ and $t_4$, that $t_1$ is the parent of $t_2$, for example.
+        Once this structure is known, differentiation becomes a systematic process of propagating sensitivities along the edges.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Differentiate by hand</h2>
+      <p class="small">
+        Before automating the procedure, let us compute the gradient manually.
+        We seek $\nabla y = (\frac{\partial y}{\partial x}, \frac{\partial y}{\partial z})$.
+        Notice that $x$ influences $y$ through two distinct paths in the graph: $x \to t_1 \to t_2 \to y$ and $x \to t_3 \to t_4 \to y$.
+        By the chain rule, the total derivative is the sum of the contributions from each path:
+      </p>
+      </p>
+      <div class="pill"><div class="v small">
+        $$
+        \frac{\partial y}{\partial x}
+        =
+        \frac{\partial y}{\partial t_2}\frac{\partial t_2}{\partial t_1}\frac{\partial t_1}{\partial x}
+        +
+        \frac{\partial y}{\partial t_4}\frac{\partial t_4}{\partial t_3}\frac{\partial t_3}{\partial x}
+        = 2t_1 -\sin t_3 = 2(x-z) - \sin(x+z)
+      $$</div></div>
+      <p class="small">
+        The same reasoning applies in the $z$-direction, giving:
+      </p>
+      <div class="pill"><div class="v small">
+        $$
+        \frac{\partial y}{\partial z}
+        =
+        \frac{\partial y}{\partial t_2}\frac{\partial t_2}{\partial t_1}\frac{\partial t_1}{\partial z}
+        +
+        \frac{\partial y}{\partial t_4}\frac{\partial t_4}{\partial t_3}\frac{\partial t_3}{\partial z}
+        = -2t_1 -\sin t_3 = -2(x-z) - \sin(x+z)
+      $$</div></div>
+      <p class="small">
+        For a small graph like this, the computation is straightforward. But if the graph contained millions of nodes and deeply nested dependencies,
+        manually enumerating all paths would be infeasible.
+        Reverse-mode AD automates this process, as we will see.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Local Derivatives</h2>
+      <p class="small">
+        AD relies on knowing the local derivative of each elementary operation. These are simple, one-step derivatives.
+        For this example, the local rules required here are:
+      </p>
+        <div class="pill"><div class="v small">
+          $$
+          \frac{\partial (a+b)}{\partial a}=1,\ \frac{\partial (a+b)}{\partial b}=1,\
+          \frac{\partial (a-b)}{\partial a}=1,\ \frac{\partial (a-b)}{\partial b}=-1,\ 
+          \frac{\partial (a^2)}{\partial a}=2a,\ 
+          \frac{\partial \cos(a)}{\partial a}=-\sin(a).
+          $$
+        </div></div>
+        <p class="small">
+        Modern frameworks store these local rules internally (see, e.g., PyTorch’s <a href="https://github.com/pytorch/pytorch/blob/main/tools/autograd/derivatives.yaml" target="_blank" rel="noopener noreferrer">source code</a>). 
+        You can even write your own custom operations and specify their local derivatives (see, e.g., TensorFlow's <a href="https://www.tensorflow.org/api_docs/python/tf/RegisterGradient" target="_blank" rel="noopener noreferrer">RegisterGradient</a> function).
+        Reverse-mode AD simply applies these rules repeatedly, combining them according to the structure of the computational graph.
+        </p>
+    </section>
+
+
+    <section class="card">
+    <h2>Where the backpropagation update comes from</h2>
+
+    <p class="small">
+      Let $g_n := \frac{\partial y}{\partial n}$ denote the gradient of the final output with respect to any node $n$.
+      Suppose a node $p$ feeds into several children $c_1, \dots, c_m$.
+      Because each child influences the final output, the variable $p$ affects $y$ through <em>all</em> downstream paths.
+    </p>
+
+    <p class="small">
+      By the chain rule,
+    </p>
+
+    <div class="pill"><div class="v small">
+      $$
+      \frac{\partial y}{\partial p}
+      =
+      \sum_{j=1}^{m}
+      \frac{\partial y}{\partial c_j}
+      \frac{\partial c_j}{\partial p}.
+      $$</div></div>
+
+    <p class="small">
+      In gradient notation, this becomes
+    </p>
+
+    <div class="pill"><div class="v small">
+      $$
+      g_p = \sum_{j=1}^{m} g_{c_j}\,\frac{\partial c_j}{\partial p}.
+      $$</div></div>
+
+    <p class="small">
+      Two important ideas appear in this formula:
+    </p>
+
+    <ul class="small">
+      <li>
+        <strong>Recursive dependence:</strong> the gradient at node $p$ depends on the gradients of its children.
+        Since the process begins at the output node, with initial gradient
+        $g_y = \frac{\partial y}{\partial y} = 1$,
+        and then propagates backward through the graph, then the gradients of the children were computed earlier
+        in the reverse pass and are available for use in computing the gradient of the parent.
+      </li>
+      <li>
+        <strong>Local derivatives:</strong> the term
+        $\frac{\partial c_j}{\partial p}$ (i.e. the derivative of the child with respect to the parent)
+        is precisely one of the elementary derivatives listed earlier
+        (e.g. derivative of addition, squaring, cosine, etc.).
+        Reverse-mode AD thus never performs global symbolic differentiation --
+        it only multiplies already-computed gradients by these local rules.
+      </li>
+    </ul>
+
+    <p class="small">
+      During reverse traversal of the graph we process one child at a time.
+      Each time we compute a contribution, we add it to the running total:
+    </p>
+
+    <div class="pill"><div class="v small">$$
+      g_p \mathrel{+}= g_n \cdot \frac{\partial n}{\partial p},\quad\quad \text{which means increment}\ g_p \leftarrow g_p + g_n \cdot \frac{\partial n}{\partial p}. 
+      $$</div></div>
+
+    <p class="small">
+      In summary, backpropagation is a recursive accumulation of
+      <em>(upstream gradient)</em> $\times$ <em>(local derivative)</em>
+      applied systematically from the output node back to the inputs.
+    </p>
+  </section>
+
+    <section class="card">
+      <h2>Numeric walkthrough (\(x=1,\ z=2\))</h2>
+      <p class="small">
+        Forward values:
+      </p>
+      <div class="pill"><div class="v small">\[
+        t_1=-1,\quad t_2=1,\quad t_3=3,\quad t_4=\cos(3)\approx-0.98999,\quad y\approx0.01001
+      \]</div></div>
+      <p class="small">
+        Reverse accumulation:
+      </p>
+      <div class="pill"><div class="v small">
+        Initialise: $\quad\quad\quad\quad\quad\quad\quad\quad\quad\quad\quad\ \, g_y=1$<br>
+        Process parents of $y$, i.e. $(t_2,t_4)$: $\quad g_{t_2} \mathrel{+}= g_y \cdot \frac{\partial y}{\partial t_2} = 1,\quad g_{t_4}{+}= g_y \cdot \frac{\partial y}{\partial t_4} = 1$<br>
+        Process parents of $t_2$, i.e. $t_1$: $\quad\quad\ \ \ g_{t_1} \mathrel{+}= g_{t_2}\cdot\frac{\partial t_2}{\partial t_1} = 1\cdot (2t_1)= -2$<br>
+        Process parents of $t_4$, i.e. $t_3$: $\quad\quad\ \ \ g_{t_3} \mathrel{+}= g_{t_4}\cdot\frac{\partial t_4}{\partial t_3} = 1\cdot(-\sin t_3)\approx-0.14112$<br>
+        Process parents of $t_1$, i.e. $(x,z)$: $\quad\ \ g_x \mathrel{+}= g_{t_1}\cdot \frac{\partial t_1}{\partial x} = -2\cdot 1=-2,\quad g_z \mathrel{+}= g_{t_1}\cdot \frac{\partial t_1}{\partial z} = -2\cdot(-1)=2$<br>
+        Process parents of $t_3$, i.e. $(x,z)$: $\quad\ \ g_x \mathrel{+}= g_{t_3}\cdot \frac{\partial t_3}{\partial x} = -0.14112\cdot1=-0.14112,\quad g_z \mathrel{+}= g_{t_3}\cdot \frac{\partial t_3}{\partial z} = -0.14112\cdot1=-0.14112$
+      </div></div>
+      <p class="small">
+        Final gradients:
+      </p>
+      <div class="pill"><div class="v small">\[
+        \frac{\partial y}{\partial x} = g_x \approx -2.14112,\qquad
+        \frac{\partial y}{\partial z} = g_z\approx 1.85888
+      \]</div></div>
+      <p class="small">
+        Comparing this with the analytical gradients computed at the beginning,
+        $$\nabla y(1,2) = (2(1-2) - \sin(1+2), -2(1-2) - \sin(1+2)) = (-2 - \sin(3), 2 - \sin(3)) \approx (-2.14112, 1.85888),$$
+        we achieve the same result.
+      </p> 
+    </section>
+  </div>
+  <header>
+    <p>
+      In the accompanying <a href="index.html">demonstration</a>, you can run both the forward and backward passes interactively.
+      At each stage, try to follow the calculations at each step and verify that the final gradients match what you get from the analytical formulas.
+      You can also experiment with gradient descent: update the input variables in the direction of the negative gradient and observe how the output changes.
+      This provides an illustration of how gradients guide optimisation.
+    </p>
+  </header>
+</body>
+</html>
