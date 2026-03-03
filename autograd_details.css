@@ -22,6 +22,7 @@ header {
   max-width: 980px;
   margin: 0 auto;
   padding: 22px 22px 10px;
+  text-align: left;
 }
 
 header h1 {
@@ -57,7 +58,7 @@ a { color: var(--accent); }
   border-radius: 12px;
   padding: 14px;
   box-shadow: var(--shadow);
-  text-align: center;
+  text-align: left;
 }
 
 .card h2 {
