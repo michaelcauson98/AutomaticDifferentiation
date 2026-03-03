@@ -107,7 +107,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .pill .k { font-size: 11px; color: var(--muted); }
 .pill .v { margin-top: 3px; font-size: 14px; font-variant-numeric: tabular-nums; }
 #chainRuleInfo {
-    height: 150px;
+    height: 50px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: rgba(169,182,214,0.45) rgba(255,255,255,0.05);
