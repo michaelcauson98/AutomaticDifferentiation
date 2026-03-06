@@ -128,6 +128,15 @@
     </section>
 
       <div class="vizCol">
+        <div class="vizToolbar">
+          <label for="vizModeSelect">View</label>
+          <select id="vizModeSelect" aria-label="Visualization view mode">
+            <option value="both">Both</option>
+            <option value="graph">Graph only</option>
+            <option value="plot">Plot only</option>
+          </select>
+        </div>
+
         <section class="card graphWrap">
           <h2>Computational Graph</h2>
           <div class="legend" style="margin-top:0; margin-bottom:6px;">
@@ -146,9 +155,7 @@
             <span class="chip"><span class="dot forwardp"></span>forward eval</span>
             <span class="chip"><span class="dot previewp"></span>slider preview</span>
           </div>
-          <div id="plot3d"
-            style="width:100%; height:430px;">
-          </div>
+          <div id="plot3d"></div>
         </section>
       </div>
   </div>

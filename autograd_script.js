@@ -760,6 +760,13 @@
   const lrRange = $("#lrRange");
   const lrValEl = $("#lrVal");
   const plot3dEl = $("#plot3d");
+  const vizModeSelect = $("#vizModeSelect");
+  const vizColEl = $(".vizCol");
+  const controlPanelEl = document.querySelector(".wrap > section.card");
+  const graphWrapEl = $(".graphWrap");
+  const plotWrapEl = $(".plotWrap");
+  let vizMode = vizModeSelect?.value ?? "both";
+  let onlyModeLockedHeight = null;
   let descentTrace = [];
   const functionSurfaceCache = new Map();
 
@@ -783,6 +790,43 @@
   function updateSliderLabels() {
     xValEl.textContent = fmt(parseFloat(xRange.value));
     zValEl.textContent = fmt(parseFloat(zRange.value));
+  }
+
+  function applyOnlyModeHeight(mode, forcedHeight = null) {
+    if (!graphWrapEl || !plotWrapEl) return;
+    graphWrapEl.style.height = "";
+    plotWrapEl.style.height = "";
+
+    if (mode === "both") return;
+    const measured = controlPanelEl?.getBoundingClientRect?.().height;
+    const targetHeight = Number.isFinite(forcedHeight) ? forcedHeight : measured;
+    if (!Number.isFinite(targetHeight) || targetHeight <= 0) return;
+
+    if (mode === "graph") graphWrapEl.style.height = `${targetHeight}px`;
+    if (mode === "plot") plotWrapEl.style.height = `${targetHeight}px`;
+  }
+
+  function setVizMode(mode) {
+    const nextMode = (mode === "graph" || mode === "plot" || mode === "both") ? mode : "both";
+    const wasMode = vizMode;
+    if (nextMode !== "both" && wasMode === "both") {
+      const h = controlPanelEl?.getBoundingClientRect?.().height;
+      onlyModeLockedHeight = Number.isFinite(h) ? h : null;
+    }
+    if (nextMode === "both") onlyModeLockedHeight = null;
+
+    vizMode = nextMode;
+    if (vizColEl) vizColEl.classList.toggle("only-one", nextMode !== "both");
+    if (graphWrapEl) graphWrapEl.style.display = nextMode === "plot" ? "none" : "flex";
+    if (plotWrapEl) plotWrapEl.style.display = nextMode === "graph" ? "none" : "flex";
+    applyOnlyModeHeight(nextMode, onlyModeLockedHeight);
+
+    if (nextMode !== "graph" && plot3dEl && typeof Plotly !== "undefined") {
+      requestAnimationFrame(() => {
+        Plotly.Plots.resize(plot3dEl);
+        render3DPlot();
+      });
+    }
   }
 
   // Update output, gradients, and progress display after forward or backprop steps
@@ -996,6 +1040,7 @@
   // Render the 3D plot of the function surface, current point, descent trace, and gradient direction
   function render3DPlot() {
     if (!plot3dEl || typeof Plotly === "undefined") return;
+    if (plot3dEl.offsetParent === null) return;
 
     const fnIndex = parseInt(fnSelect.value, 10);
     const surface = buildFunctionSurface(fnIndex);
@@ -1094,7 +1139,7 @@
 
     // Layout with fixed axes ranges and aspect ratio
     const layout = {
-      margin: { l: 8, r: 8, t: 24, b: 24 },
+      margin: { l: 5, r: 5, t: 5, b: 5 },
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
       showlegend: false,
@@ -1296,6 +1341,22 @@
     updateStepSizeLabel();
     render3DPlot();
   });
+  vizModeSelect?.addEventListener("change", (e) => {
+    setVizMode(e.target.value);
+  });
+  window.addEventListener("resize", () => {
+    if (vizMode === "both") {
+      applyOnlyModeHeight(vizMode);
+    } else {
+      const h = controlPanelEl?.getBoundingClientRect?.().height;
+      onlyModeLockedHeight = Number.isFinite(h) ? h : onlyModeLockedHeight;
+      applyOnlyModeHeight(vizMode, onlyModeLockedHeight);
+    }
+    if (plot3dEl && plot3dEl.offsetParent !== null && typeof Plotly !== "undefined") {
+      Plotly.Plots.resize(plot3dEl);
+      render3DPlot();
+    }
+  });
 
   btnForward.addEventListener("click", runForward);
   btnStep.addEventListener("click", stepBackprop);
@@ -1308,6 +1369,7 @@
   // Init
   updateSliderLabels();
   updateStepSizeLabel();
+  setVizMode(vizModeSelect?.value ?? "both");
   rebuildGraph();
   updateDescendState();
 })();
